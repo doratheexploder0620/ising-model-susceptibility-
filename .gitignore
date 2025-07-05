@@ -1,0 +1,15 @@
+# IDE and Editor specific files
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Data files exported from the simulation
+*.csv
+*.json
+
+# Personal notes
+notes.txt
+todo.md
