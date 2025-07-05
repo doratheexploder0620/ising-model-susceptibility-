@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Ising Model with Susceptibility Graphs</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> 
+    <style>
+        body {
+            margin: 0;
+            overflow-x: hidden; 
+            overflow-y: auto;   
+            display: flex;
+            flex-direction: column; 
+            align-items: center;
+            min-height: 100vh;
+            background-color: #222; 
+            font-family: 'Inter', sans-serif;
+            color: #eee;
+            padding-bottom: 20px; 
+        }
+        .main-content-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 800px; 
+        }
+        #scene-container {
+            width: 95vw; 
+            height: 45vh; /* Adjusted for two graphs */
+            min-height: 280px; 
+            max-width: 750px; 
+            max-height: 400px; 
+            border-radius: 10px;
+            overflow: hidden; 
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            margin-top: 5px; 
+            position: relative; 
+            background-color: #000; 
+        }
+        #selection-rectangle {
+            position: absolute;
+            border: 1px dashed #00ffff; 
+            background-color: rgba(0, 255, 255, 0.2); 
+            display: none; 
+            z-index: 10; 
+            pointer-events: none; 
+        }
+        canvas { 
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        .controls-panel {
+            margin-top: 5px; 
+            padding: 6px 12px; 
+            background-color: #333;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px; /* Reduced gap */
+            width: 95vw; 
+            max-width: 750px;
+            box-sizing: border-box;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            width: 100%; 
+            justify-content: center; 
+            flex-wrap: wrap; 
+        }
+        .controls-panel label {
+            font-size: 0.8em; /* Smaller labels */
+            margin-right: 3px; 
+            white-space: nowrap; 
+        }
+        .controls-panel input[type="range"] {
+            width: 70px; /* Adjusted width */
+            cursor: pointer;
+            margin-right: 3px;
+        }
+        .controls-panel input[type="number"] {
+            width: 50px; 
+            padding: 2px;
+            border-radius: 3px;
+            border: 1px solid #555;
+            background-color: #444;
+            color: #eee;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8em;
+            margin-left: 3px; 
+        }
+        .controls-panel button {
+            padding: 5px 7px; 
+            background-color: #555;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin: 2px; 
+            font-size: 0.7em; 
+        }
+        .controls-panel button:hover {
+            background-color: #777;
+        }
+        .controls-panel button.active { 
+            background-color: #4CAF50; 
+        }
+        .controls-panel button.paused { 
+            background-color: #f44336; 
+        }
+        .value-display {
+            min-width: 40px; 
+            text-align: right;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8em;
+            margin-right: 3px;
+        }
+        #stats-display {
+            margin-top: 2px; 
+            font-size: 0.8em;
+            display: flex; 
+            gap: 10px;      
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .button-group {
+            display: flex;
+            flex-wrap: wrap; 
+            justify-content: center; 
+            gap: 4px; 
+            margin-top: 2px;
+        }
+        .graph-section {
+            width: 95vw;
+            max-width: 750px;
+            margin-top: 10px;
+            background-color: #333;
+            padding: 8px;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+        .graph-section h3 {
+            font-size: 0.9em;
+            margin-top: 0;
+            margin-bottom: 5px;
+            text-align: center;
+            color: #ccc;
+        }
+        .graph-canvas-container {
+            width: 100%;
+            height: 28vh; 
+            min-height: 180px; 
+            max-height: 220px;
+        }
+        #status-message {
+            font-size: 0.8em;
+            color: #ffc107; /* Amber color for status */
+            text-align: center;
+            height: 1.2em; /* Reserve space */
+            margin-top: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content-area">
+        <div class="controls-panel">
+            <div class="control-row">
+                <label for="temp-slider">Temp (T):</label>
+                <input type="range" id="temp-slider" min="0.0" max="20.0" step="0.001" value="2.5">
+                <span id="temp-value-display" class="value-display">2.500</span>
+                <input type="number" id="temp-input" min="0.0" max="20.0" step="0.001" value="2.5">
+            </div>
+            <div class="control-row">
+                <label for="h-field-slider">Field (H):</label>
+                <input type="range" id="h-field-slider" min="-2.0" max="2.0" step="0.01" value="0.0">
+                <span id="h-field-value-display" class="value-display">0.00</span>
+                <input type="number" id="h-field-input" min="-2.0" max="2.0" step="0.01" value="0.0">
+            </div>
+            <div class="control-row">
+                <label for="grid-size-slider">Grid Size (N):</label>
+                <input type="range" id="grid-size-slider" min="10" max="50" step="1" value="30">
+                <span id="grid-size-value" class="value-display">30</span>
+            </div>
+            <div id="stats-display">
+                <div>Magnetization (M): <span id="magnetization-value" class="value-display">0.000</span></div>
+                <div>Susceptibility (χ): <span id="susceptibility-value" class="value-display">0.000</span></div>
+            </div>
+             <div id="status-message"></div> <div class="button-group">
+                <button id="reset-button">Reset Sim</button>
+                <button id="set-tc-button">Set $T_c$</button> 
+                <button id="flipper-mode-button">Activate Flipper</button>
+                <button id="fluctuation-toggle-button">Pause Thermal</button> 
+                <button id="set-all-up-button">All Up</button>
+                <button id="set-all-down-button">All Down</button>
+                <button id="generate-static-graph-button">Generate Static χ vs T Graph</button>
+            </div>
+        </div>
+
+        <div id="scene-container">
+            <div id="selection-rectangle"></div> 
+        </div>
+
+        <div class="graph-section">
+            <h3>Dynamic Susceptibility (Current Sim)</h3>
+            <div class="graph-canvas-container">
+                <canvas id="susceptibilityChart"></canvas>
+            </div>
+        </div>
+        <div class="graph-section">
+            <h3>Static Susceptibility vs. Temperature</h3>
+             <div class="graph-canvas-container">
+                <canvas id="staticSusceptibilityChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log("Script execution started."); 
+        let scene, camera, renderer, controls;
+        let spinMeshes = []; 
+        let spins; 
+        let mouse; 
+
+        let flipperModeActive = false;
+        let isDrawingShape = false;
+        let shapeStartNDC = new THREE.Vector2(); 
+        let shapeEndNDC = new THREE.Vector2();   
+        let rectStartPixels = { x: 0, y: 0 }; 
+        
+        const selectionRectDiv = document.getElementById('selection-rectangle'); 
+
+        let thermalFluctuationsEnabled = true;
+        let externalFieldH = 0.0; 
+
+        let sum_M_tot = 0;        
+        let sum_M2_tot = 0;       
+        let mcs_for_avg_chi = 0;  
+        const CHI_AVG_WINDOW = 50; 
+        
+        // Parameters for static graph generation
+        const STATIC_GRAPH_EQ_SWEEPS_NORMAL = 50; 
+        const STATIC_GRAPH_AVG_SWEEPS_NORMAL = 100; 
+        const STATIC_GRAPH_EQ_SWEEPS_CRITICAL = 150; // More sweeps near Tc
+        const STATIC_GRAPH_AVG_SWEEPS_CRITICAL = 200; // More averaging near Tc
+        const CRITICAL_REGION_WIDTH = 0.5; // T_c +/- this value
+
+
+        let gridSize = 30;       
+        const arrowBaseLength = 0.6; 
+        const arrowHeadRatio = 0.3;  
+        const spinPadding = 0.3;   
+        const J = 1;               
+        const k_B = 1;          
+        let temperature = 2.5;     
+        let stepsPerFrame = gridSize * gridSize; 
+
+        const criticalTemperature = 2 / Math.log(1 + Math.sqrt(2)); 
+        const TcValueForButton = parseFloat(criticalTemperature.toFixed(5)); 
+
+        const colorUpArrow = new THREE.Color(0x00ff00);   
+        const colorDownArrow = new THREE.Color(0xff0000); 
+        
+        let currentArrowLength, currentArrowHeadLength, currentArrowHeadWidth;
+        
+        let tempSlider, tempValueDisplay, tempInput, gridSizeSlider, gridSizeValueDisplay;
+        let hFieldSlider, hFieldValueDisplay, hFieldInput;
+        let resetButton, setTcButton, flipperButton, fluctuationToggleButton;
+        let setAllUpButton, setAllDownButton, generateStaticGraphButton;
+        let magnetizationValueDisplay, susceptibilityValueDisplay, statusMessageElement;
+
+        let dynamicSusceptibilityChart, staticSusceptibilityChart;
+        let dynamicChartContext, staticChartContext; 
+        let dynamicGraphDataPoints = []; 
+        let staticGraphDataPoints = []; 
+
+        function updateArrowDimensions() {
+            const scaleFactor = Math.max(0.5, 20 / gridSize); 
+            currentArrowLength = arrowBaseLength * scaleFactor;
+            currentArrowHeadLength = currentArrowLength * arrowHeadRatio;
+            currentArrowHeadWidth = currentArrowLength * arrowHeadRatio * 0.8; 
+        }
+
+        function resetChiAverage() {
+            sum_M_tot = 0;
+            sum_M2_tot = 0;
+            mcs_for_avg_chi = 0;
+            if (susceptibilityValueDisplay) susceptibilityValueDisplay.textContent = "---"; 
+        }
+
+        function clearDynamicGraphData() {
+            dynamicGraphDataPoints = [];
+            if (dynamicSusceptibilityChart) {
+                dynamicSusceptibilityChart.data.labels = [];
+                dynamicSusceptibilityChart.data.datasets[0].data = [];
+                dynamicSusceptibilityChart.update();
+            }
+        }
+        function clearStaticGraphData() {
+            staticGraphDataPoints = [];
+            if (staticSusceptibilityChart) {
+                staticSusceptibilityChart.data.labels = [];
+                staticSusceptibilityChart.data.datasets[0].data = [];
+                staticSusceptibilityChart.update();
+            }
+        }
+
+        function addDataToDynamicGraph(temp, chi) {
+            if (isNaN(temp) || isNaN(chi) || !isFinite(chi)) return; 
+            dynamicGraphDataPoints.push({ x: parseFloat(temp.toFixed(3)), y: parseFloat(chi.toFixed(3)) });
+            const uniquePointsMap = new Map();
+            dynamicGraphDataPoints.forEach(point => uniquePointsMap.set(point.x, point.y));
+            dynamicGraphDataPoints = Array.from(uniquePointsMap, ([x, y]) => ({ x, y }));
+            dynamicGraphDataPoints.sort((a, b) => a.x - b.x);
+
+            if (dynamicSusceptibilityChart) {
+                dynamicSusceptibilityChart.data.labels = dynamicGraphDataPoints.map(p => p.x);
+                dynamicSusceptibilityChart.data.datasets[0].data = dynamicGraphDataPoints.map(p => p.y);
+                dynamicSusceptibilityChart.update();
+            }
+        }
+        
+        function plotStaticGraphData(data) {
+             if (staticSusceptibilityChart) {
+                staticSusceptibilityChart.data.labels = data.map(p => p.x);
+                staticSusceptibilityChart.data.datasets[0].data = data.map(p => p.y);
+                staticSusceptibilityChart.update();
+            }
+        }
+
+
+        function initChart(canvasId, chartTitle) {
+            if (typeof Chart === 'undefined') {
+                console.error("Chart.js library not loaded! Graph cannot be initialized.");
+                return null;
+            }
+            const chartCanvasElement = document.getElementById(canvasId);
+            if (!chartCanvasElement) {
+                console.error(`Chart canvas element #${canvasId} not found!`);
+                return null;
+            }
+            const ctx = chartCanvasElement.getContext('2d');
+            if (!ctx) {
+                console.error(`Failed to get 2D context for chart #${canvasId}!`);
+                return null;
+            }
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [], 
+                    datasets: [{
+                        label: chartTitle,
+                        data: [], 
+                        borderColor: 'rgba(0, 255, 255, 1)',
+                        backgroundColor: 'rgba(0, 255, 255, 0.2)',
+                        borderWidth: 1,
+                        tension: 0.1, 
+                        pointRadius: 3,
+                        pointBackgroundColor: 'rgba(0, 255, 255, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { type: 'linear', title: { display: true, text: 'Temperature (T)', color: '#ccc' }, ticks: { color: '#ccc' }, grid: { color: 'rgba(204, 204, 204, 0.2)' } },
+                        y: { title: { display: true, text: 'Susceptibility (χ)', color: '#ccc' }, ticks: { color: '#ccc' }, grid: { color: 'rgba(204, 204, 204, 0.2)' }, beginAtZero: true }
+                    },
+                    plugins: { legend: { labels: { color: '#ccc' } } }
+                }
+            });
+        }
+
+
+        function init() {
+            console.log("Main init() function started."); 
+            const sceneContainer = document.getElementById('scene-container');
+            if (!sceneContainer) {
+                console.error("CRITICAL: Scene container (#scene-container) not found! Aborting initialization.");
+                return; 
+            }
+            console.log("Scene container found."); 
+
+            if (typeof THREE === 'undefined') {
+                console.error("CRITICAL: THREE.js library not loaded! Aborting initialization.");
+                sceneContainer.innerHTML = "<p style='color:red; text-align:center; padding-top: 50px;'>Error: THREE.js library failed to load. Please check your internet connection and browser console (F12) for errors related to script loading.</p>";
+                return;
+            }
+            console.log("THREE.js library seems available."); 
+
+
+            scene = new THREE.Scene();
+            let initialWidth = sceneContainer.clientWidth || 400; 
+            let initialHeight = sceneContainer.clientHeight || 300; 
+            if (initialWidth === 0 || initialHeight === 0) { 
+                console.warn("Scene container has zero dimensions, using larger fallbacks.");
+                initialWidth = 400; initialHeight = 300;
+            }
+            camera = new THREE.PerspectiveCamera(50, initialWidth / initialHeight, 0.1, 5000); 
+            console.log("Camera initialized."); 
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(initialWidth, initialHeight); 
+            sceneContainer.appendChild(renderer.domElement); 
+            console.log("Renderer initialized and appended."); 
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); scene.add(ambientLight);
+            const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.5); directionalLight1.position.set(1, 1, 1).normalize(); scene.add(directionalLight1);
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.3); directionalLight2.position.set(-1, -1, 0.5).normalize(); scene.add(directionalLight2);
+            console.log("Lights added."); 
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; controls.dampingFactor = 0.05;
+            mouse = new THREE.Vector2(); 
+            console.log("Controls initialized."); 
+
+            tempSlider = document.getElementById('temp-slider');
+            tempValueDisplay = document.getElementById('temp-value-display');
+            tempInput = document.getElementById('temp-input');
+            hFieldSlider = document.getElementById('h-field-slider');
+            hFieldValueDisplay = document.getElementById('h-field-value-display');
+            hFieldInput = document.getElementById('h-field-input');
+            gridSizeSlider = document.getElementById('grid-size-slider');
+            gridSizeValueDisplay = document.getElementById('grid-size-value');
+            resetButton = document.getElementById('reset-button');
+            setTcButton = document.getElementById('set-tc-button');
+            flipperButton = document.getElementById('flipper-mode-button');
+            fluctuationToggleButton = document.getElementById('fluctuation-toggle-button');
+            setAllUpButton = document.getElementById('set-all-up-button');
+            setAllDownButton = document.getElementById('set-all-down-button');
+            generateStaticGraphButton = document.getElementById('generate-static-graph-button');
+            magnetizationValueDisplay = document.getElementById('magnetization-value');
+            susceptibilityValueDisplay = document.getElementById('susceptibility-value');
+            statusMessageElement = document.getElementById('status-message');
+            console.log("UI elements cached."); 
+
+            function updateTemperature(newTemp, source = "slider") {
+                newTemp = parseFloat(newTemp);
+                if (isNaN(newTemp)) newTemp = temperature; 
+                newTemp = Math.max(0.0, Math.min(20.0, newTemp)); 
+                if (temperature !== newTemp) resetChiAverage();
+                temperature = newTemp;
+                if (tempSlider && source !== "slider") tempSlider.value = temperature;
+                if (tempInput && source !== "input") tempInput.value = temperature.toFixed(3);
+                if (tempValueDisplay) tempValueDisplay.textContent = temperature.toFixed(3);
+            }
+
+            function updateExternalField(newH, source = "slider") {
+                newH = parseFloat(newH);
+                if (isNaN(newH)) newH = externalFieldH;
+                newH = Math.max(-2.0, Math.min(2.0, newH));
+                if (externalFieldH !== newH) {
+                    resetChiAverage(); 
+                    clearDynamicGraphData(); 
+                    clearStaticGraphData();
+                }
+                externalFieldH = newH;
+                if (hFieldSlider && source !== "slider") hFieldSlider.value = externalFieldH;
+                if (hFieldInput && source !== "input") hFieldInput.value = externalFieldH.toFixed(2);
+                if (hFieldValueDisplay) hFieldValueDisplay.textContent = externalFieldH.toFixed(2);
+            }
+
+            if(tempSlider) tempSlider.addEventListener('input', (event) => updateTemperature(event.target.value, "slider")); else console.warn("tempSlider not found");
+            if(tempInput) tempInput.addEventListener('change', (event) => updateTemperature(event.target.value, "input")); else console.warn("tempInput not found");
+            updateTemperature(temperature, "init");
+
+            if(hFieldSlider) hFieldSlider.addEventListener('input', (event) => updateExternalField(event.target.value, "slider")); else console.warn("hFieldSlider not found");
+            if(hFieldInput) hFieldInput.addEventListener('change', (event) => updateExternalField(event.target.value, "input")); else console.warn("hFieldInput not found");
+            updateExternalField(externalFieldH, "init");
+
+            if(gridSizeSlider) gridSizeSlider.addEventListener('input', (event) => {
+                gridSize = parseInt(event.target.value);
+                if(gridSizeValueDisplay) gridSizeValueDisplay.textContent = gridSize;
+                stepsPerFrame = gridSize * gridSize; 
+                resetSimulation(); 
+                clearDynamicGraphData(); 
+                clearStaticGraphData();
+            }); else console.warn("gridSizeSlider not found");
+            if(gridSizeValueDisplay) gridSizeValueDisplay.textContent = gridSize; 
+            
+            if(resetButton) resetButton.addEventListener('click', () => {
+                resetSimulation();
+                clearDynamicGraphData();
+                clearStaticGraphData();
+            }); else console.warn("resetButton not found");
+            
+            if(setTcButton) setTcButton.addEventListener('click', () => {
+                updateTemperature(TcValueForButton, "button");
+                updateExternalField(0.0, "button"); 
+            }); else console.warn("setTcButton not found");
+
+            if(flipperButton) flipperButton.addEventListener('click', () => {
+                flipperModeActive = !flipperModeActive;
+                if (flipperModeActive) {
+                    flipperButton.textContent = 'Deactivate Flipper';
+                    flipperButton.classList.add('active'); 
+                    sceneContainer.style.cursor = 'crosshair';
+                    if(controls) controls.enabled = false; 
+                    if (thermalFluctuationsEnabled) {
+                        thermalFluctuationsEnabled = false;
+                        if(fluctuationToggleButton) {
+                            fluctuationToggleButton.textContent = 'Resume Thermal';
+                            fluctuationToggleButton.classList.add('paused');
+                        }
+                    }
+                    resetChiAverage(); 
+                } else {
+                    flipperButton.textContent = 'Activate Flipper';
+                    flipperButton.classList.remove('active');
+                    sceneContainer.style.cursor = 'grab'; 
+                    isDrawingShape = false; 
+                    if(selectionRectDiv) selectionRectDiv.style.display = 'none'; 
+                    if(controls) controls.enabled = true; 
+                }
+            }); else console.warn("flipperButton not found");
+
+            if(fluctuationToggleButton) fluctuationToggleButton.addEventListener('click', () => {
+                thermalFluctuationsEnabled = !thermalFluctuationsEnabled;
+                if (thermalFluctuationsEnabled) {
+                    fluctuationToggleButton.textContent = 'Pause Thermal';
+                    fluctuationToggleButton.classList.remove('paused');
+                    resetChiAverage(); 
+                } else {
+                    fluctuationToggleButton.textContent = 'Resume Thermal';
+                    fluctuationToggleButton.classList.add('paused');
+                }
+            }); else console.warn("fluctuationToggleButton not found");
+
+            function setAllSpins(state) { 
+                for (let i = 0; i < gridSize; i++) {
+                    for (let j = 0; j < gridSize; j++) {
+                        if (spins && spins[i]) spins[i][j] = state; 
+                        const arrow = spinMeshes[i] ? spinMeshes[i][j] : null;
+                        if (arrow) {
+                            const newDir = new THREE.Vector3(0, 0, state);
+                            arrow.setDirection(newDir.normalize());
+                            arrow.setColor(state === 1 ? colorUpArrow : colorDownArrow);
+                        }
+                    }
+                }
+                if (thermalFluctuationsEnabled) {
+                    thermalFluctuationsEnabled = false;
+                    if(fluctuationToggleButton) {
+                        fluctuationToggleButton.textContent = 'Resume Thermal';
+                        fluctuationToggleButton.classList.add('paused');
+                    }
+                }
+                resetChiAverage(); 
+                clearDynamicGraphData();
+                clearStaticGraphData();
+                if(magnetizationValueDisplay) magnetizationValueDisplay.textContent = calculateCurrentMagnetizationPerSpin().toFixed(3);
+            }
+
+            if(setAllUpButton) setAllUpButton.addEventListener('click', () => setAllSpins(1)); else console.warn("setAllUpButton not found");
+            if(setAllDownButton) setAllDownButton.addEventListener('click', () => setAllSpins(-1)); else console.warn("setAllDownButton not found");
+            
+            if(generateStaticGraphButton) generateStaticGraphButton.addEventListener('click', () => {
+                generateStaticSusceptibilityData();
+            }); else console.warn("generateStaticGraphButton not found");
+
+
+            sceneContainer.addEventListener('mousedown', onCanvasMouseDown, false);
+            sceneContainer.addEventListener('mousemove', onCanvasMouseMove, false);
+            sceneContainer.addEventListener('mouseup', onCanvasMouseUp, false); 
+            sceneContainer.addEventListener('mouseleave', onCanvasMouseLeave, false); 
+            renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
+            console.log("UI event listeners attached."); 
+
+            updateArrowDimensions(); 
+            initializeSpinsAndMeshes(); 
+            setupCameraAndControls(); 
+            resetChiAverage();
+            dynamicSusceptibilityChart = initChart('susceptibilityChart', 'Dynamic Susceptibility (χ)'); 
+            staticSusceptibilityChart = initChart('staticSusceptibilityChart', 'Static Susceptibility (χ vs T)');
+
+            window.addEventListener('resize', onWindowResize, false);
+            onWindowResize(); 
+            console.log("Main init() function complete."); 
+        }
+        
+        function setupCameraAndControls() {
+            if (!camera || !controls) {
+                console.error("Camera or controls not initialized before setupCameraAndControls call.");
+                return;
+            }
+            const totalGridVisualWidth = gridSize * (currentArrowLength + spinPadding); 
+            camera.position.set(totalGridVisualWidth / 2, totalGridVisualWidth / 2, totalGridVisualWidth * 1.5 );
+            camera.lookAt(totalGridVisualWidth / 2, totalGridVisualWidth / 2, 0);
+            controls.target.set(totalGridVisualWidth / 2, totalGridVisualWidth / 2, 0);
+            controls.minDistance = totalGridVisualWidth * 0.5;
+            controls.maxDistance = totalGridVisualWidth * 4;
+            if (controls.enabled) controls.update(); 
+        }
+
+        function initializeSpinsAndMeshes(randomize = true) { 
+            if (!scene) {
+                console.error("Scene not initialized before initializeSpinsAndMeshes call.");
+                return;
+            }
+            spinMeshes.forEach(row => row.forEach(arrow => { if (arrow) scene.remove(arrow); }));
+            spinMeshes = [];
+            spins = [];
+            updateArrowDimensions(); 
+            const initialOrigin = new THREE.Vector3(0, 0, 0); 
+            for (let i = 0; i < gridSize; i++) {
+                spins[i] = [];
+                spinMeshes[i] = [];
+                for (let j = 0; j < gridSize; j++) {
+                    if (randomize) {
+                        spins[i][j] = Math.random() < 0.5 ? 1 : -1;
+                    } else { 
+                        spins[i][j] = 1; 
+                    }
+                    const dir = new THREE.Vector3(0, 0, spins[i][j]); 
+                    const color = spins[i][j] === 1 ? colorUpArrow : colorDownArrow;
+                    const xPos = i * (currentArrowLength + spinPadding);
+                    const yPos = j * (currentArrowLength + spinPadding);
+                    const arrow = new THREE.ArrowHelper(dir.normalize(), initialOrigin, currentArrowLength, color, currentArrowHeadLength, currentArrowHeadWidth);
+                    arrow.position.set(xPos, yPos, 0); 
+                    arrow.userData = { grid_i: i, grid_j: j }; 
+                    scene.add(arrow);
+                    spinMeshes[i][j] = arrow;
+                }
+            }
+        }
+        
+        function resetSimulation() {
+            initializeSpinsAndMeshes(true); 
+            setupCameraAndControls(); 
+            if (!thermalFluctuationsEnabled) {
+                 thermalFluctuationsEnabled = true;
+                 if(fluctuationToggleButton) {
+                    fluctuationToggleButton.textContent = 'Pause Thermal';
+                    fluctuationToggleButton.classList.remove('paused');
+                 }
+            }
+            resetChiAverage();
+        }
+
+        function onWindowResize() {
+            const sceneContainer = document.getElementById('scene-container');
+            if (!sceneContainer || !camera || !renderer) return; 
+
+            const width = sceneContainer.clientWidth;
+            const height = sceneContainer.clientHeight;
+
+            if (width === 0 || height === 0) { 
+                console.warn("onWindowResize: sceneContainer has zero dimensions.");
+                return; 
+            }
+            
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        function getMouseNDC(event, targetElement) {
+            const bounds = targetElement.getBoundingClientRect();
+            const x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1;
+            const y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
+            return new THREE.Vector2(x, y);
+        }
+        
+        function getMousePixels(event, targetElement) {
+            const bounds = targetElement.getBoundingClientRect();
+            const x = event.clientX - bounds.left;
+            const y = event.clientY - bounds.top;
+            return { x, y };
+        }
+
+        function onCanvasMouseDown(event) {
+            const sceneContainer = document.getElementById('scene-container');
+            if (!flipperModeActive || event.button !== 0 || !sceneContainer) return; 
+            isDrawingShape = true;
+            const currentMousePixels = getMousePixels(event, sceneContainer);
+            rectStartPixels.x = currentMousePixels.x;
+            rectStartPixels.y = currentMousePixels.y;
+            if(selectionRectDiv) {
+                selectionRectDiv.style.left = rectStartPixels.x + 'px';
+                selectionRectDiv.style.top = rectStartPixels.y + 'px';
+                selectionRectDiv.style.width = '0px';
+                selectionRectDiv.style.height = '0px';
+                selectionRectDiv.style.display = 'block';
+            }
+            shapeStartNDC.copy(getMouseNDC(event, renderer.domElement)); 
+            shapeEndNDC.copy(shapeStartNDC); 
+        }
+
+        function onCanvasMouseMove(event) {
+            const sceneContainer = document.getElementById('scene-container');
+            if (!flipperModeActive || !isDrawingShape || !sceneContainer) return;
+            const currentMousePixels = getMousePixels(event, sceneContainer);
+            let newLeft = Math.min(currentMousePixels.x, rectStartPixels.x);
+            let newTop = Math.min(currentMousePixels.y, rectStartPixels.y);
+            let width = Math.abs(currentMousePixels.x - rectStartPixels.x);
+            let height = Math.abs(currentMousePixels.y - rectStartPixels.y);
+            if(selectionRectDiv) {
+                selectionRectDiv.style.left = newLeft + 'px';
+                selectionRectDiv.style.top = newTop + 'px';
+                selectionRectDiv.style.width = width + 'px';
+                selectionRectDiv.style.height = height + 'px';
+            }
+            shapeEndNDC.copy(getMouseNDC(event, renderer.domElement)); 
+        }
+        
+        function onCanvasMouseLeave(event) {
+            if (flipperModeActive && isDrawingShape) onCanvasMouseUp(event); 
+        }
+
+        function onCanvasMouseUp(event) {
+            if (!flipperModeActive || !isDrawingShape ) return; 
+            if(event.type !== 'mouseleave') shapeEndNDC.copy(getMouseNDC(event, renderer.domElement));
+            isDrawingShape = false;
+            if(selectionRectDiv) selectionRectDiv.style.display = 'none';
+            const minX_NDC = Math.min(shapeStartNDC.x, shapeEndNDC.x);
+            const maxX_NDC = Math.max(shapeStartNDC.x, shapeEndNDC.x);
+            const minY_NDC = Math.min(shapeStartNDC.y, shapeEndNDC.y);
+            const maxY_NDC = Math.max(shapeStartNDC.y, shapeEndNDC.y);
+            const projectedPos = new THREE.Vector3();
+            let flipOccurred = false;
+            for (let i = 0; i < gridSize; i++) {
+                for (let j = 0; j < gridSize; j++) {
+                    const arrow = spinMeshes[i] ? spinMeshes[i][j] : null;
+                    if (arrow) { 
+                        projectedPos.copy(arrow.position).project(camera);
+                        if (projectedPos.x >= minX_NDC && projectedPos.x <= maxX_NDC &&
+                            projectedPos.y >= minY_NDC && projectedPos.y <= maxY_NDC) {
+                            if (spins && spins[i]) spins[i][j] *= -1; 
+                            const newDir = new THREE.Vector3(0, 0, spins[i] ? spins[i][j] : 0);
+                            arrow.setDirection(newDir.normalize());
+                            arrow.setColor(spins[i] && spins[i][j] === 1 ? colorUpArrow : colorDownArrow);
+                            flipOccurred = true;
+                        }
+                    }
+                }
+            }
+            if (flipOccurred) {
+                resetChiAverage(); 
+                clearDynamicGraphData(); 
+            }
+            if(magnetizationValueDisplay) magnetizationValueDisplay.textContent = calculateCurrentMagnetizationPerSpin().toFixed(3);
+        }
+
+        function metropolisStep() {
+            if (temperature < 0) return; 
+            if (!spins || spins.length === 0 || gridSize === 0) return; 
+
+            const i = Math.floor(Math.random() * gridSize);
+            const j = Math.floor(Math.random() * gridSize);
+
+            if (!spins[i] || typeof spins[i][j] === 'undefined') return; 
+
+            let sumOfNeighborSpins = 0;
+            sumOfNeighborSpins += spins[(i + 1) % gridSize][j];
+            sumOfNeighborSpins += spins[(i - 1 + gridSize) % gridSize][j];
+            sumOfNeighborSpins += spins[i][(j + 1) % gridSize];
+            sumOfNeighborSpins += spins[i][(j - 1 + gridSize) % gridSize];
+            const deltaE = 2 * J * spins[i][j] * sumOfNeighborSpins + 2 * externalFieldH * spins[i][j];
+
+            let acceptMove = false;
+            if (deltaE < 0) {
+                acceptMove = true;
+            } else if (temperature > 0.00001) { 
+                if (Math.random() < Math.exp(-deltaE / (k_B * temperature))) {
+                    acceptMove = true;
+                }
+            }
+
+            if (acceptMove) {
+                spins[i][j] *= -1; 
+                const arrow = spinMeshes[i] ? spinMeshes[i][j] : null;
+                if (arrow) {
+                    const newDir = new THREE.Vector3(0, 0, spins[i][j]);
+                    arrow.setDirection(newDir.normalize()); 
+                    arrow.setColor(spins[i][j] === 1 ? colorUpArrow : colorDownArrow); 
+                }
+            }
+        }
+
+        function calculateCurrentTotalMagnetization() {
+            if (!spins || spins.length === 0) return 0;
+            let M_tot = 0;
+            for (let i = 0; i < gridSize; i++) {
+                if (spins[i]) { 
+                    for (let j = 0; j < gridSize; j++) {
+                        if (typeof spins[i][j] !== 'undefined') M_tot += spins[i][j];
+                    }
+                }
+            }
+            return M_tot;
+        }
+        function calculateCurrentMagnetizationPerSpin() {
+            const N_total_spins = gridSize * gridSize;
+            if (N_total_spins === 0) return 0;
+            return calculateCurrentTotalMagnetization() / N_total_spins;
+        }
+
+        async function generateStaticSusceptibilityData() {
+            if (!statusMessageElement || !generateStaticGraphButton) return;
+
+            statusMessageElement.textContent = "Generating static graph... This may take a while.";
+            generateStaticGraphButton.disabled = true;
+            const originalTemperature = temperature; 
+            const originalFluctuationState = thermalFluctuationsEnabled;
+            thermalFluctuationsEnabled = false; 
+
+            const tempPoints = [];
+            const tcLow = TcValueForButton - CRITICAL_REGION_WIDTH;
+            const tcHigh = TcValueForButton + CRITICAL_REGION_WIDTH;
+
+            // Coarse steps outside critical region
+            for (let t = 0.1; t < tcLow; t += 0.4) tempPoints.push(parseFloat(t.toFixed(3)));
+            // Finer steps inside critical region
+            for (let t = Math.max(0.1, tcLow); t <= Math.min(20.0, tcHigh); t += 0.05) tempPoints.push(parseFloat(t.toFixed(3)));
+             // Coarse steps outside critical region (high T)
+            for (let t = Math.max(tcHigh + 0.4, tcLow + 0.05); t <= 20.0; t += 0.5) tempPoints.push(parseFloat(t.toFixed(3)));
+            
+            // Ensure TcValueForButton is included and points are unique and sorted
+            if (tempPoints.indexOf(TcValueForButton) === -1 && TcValueForButton >=0.0 && TcValueForButton <= 20.0) {
+                 tempPoints.push(TcValueForButton);
+            }
+            const uniqueTempPoints = [...new Set(tempPoints)].filter(t => t>=0.0 && t<=20.0); // Ensure within bounds
+            uniqueTempPoints.sort((a,b) => a-b);
+
+
+            let newStaticGraphData = [];
+            console.log(`Generating static graph for ${uniqueTempPoints.length} temperature points.`);
+
+            for (const t_point of uniqueTempPoints) {
+                temperature = t_point; 
+                initializeSpinsAndMeshes(false); 
+
+                let eq_sweeps = STATIC_GRAPH_EQ_SWEEPS_NORMAL;
+                let avg_sweeps = STATIC_GRAPH_AVG_SWEEPS_NORMAL;
+                if (t_point >= tcLow && t_point <= tcHigh) { // Inside critical region
+                    eq_sweeps = STATIC_GRAPH_EQ_SWEEPS_CRITICAL;
+                    avg_sweeps = STATIC_GRAPH_AVG_SWEEPS_CRITICAL;
+                }
+                
+                // console.log(`T=${t_point.toFixed(3)}, EQ Sweeps: ${eq_sweeps}, AVG Sweeps: ${avg_sweeps}`);
+
+                for (let eq_sweep = 0; eq_sweep < eq_sweeps; eq_sweep++) {
+                    for (let step = 0; step < stepsPerFrame; step++) {
+                        metropolisStep();
+                    }
+                }
+
+                let current_sum_M_tot = 0;
+                let current_sum_M2_tot = 0;
+                for (let avg_sweep = 0; avg_sweep < avg_sweeps; avg_sweep++) {
+                    for (let step = 0; step < stepsPerFrame; step++) {
+                        metropolisStep();
+                    }
+                    const m_total_at_sweep = calculateCurrentTotalMagnetization();
+                    current_sum_M_tot += m_total_at_sweep;
+                    current_sum_M2_tot += m_total_at_sweep * m_total_at_sweep;
+                }
+                
+                let chi_at_t = 0;
+                if (temperature > 0.00001) { 
+                    const N_total_spins = gridSize * gridSize;
+                    if (N_total_spins > 0 && avg_sweeps > 0) {
+                        const avg_M_tot_val = current_sum_M_tot / avg_sweeps;
+                        const avg_M2_tot_val = current_sum_M2_tot / avg_sweeps;
+                        chi_at_t = (avg_M2_tot_val - avg_M_tot_val * avg_M_tot_val) / (N_total_spins * temperature);
+                    }
+                } else { 
+                    chi_at_t = 0;
+                }
+                newStaticGraphData.push({ x: t_point, y: chi_at_t });
+                
+                await new Promise(resolve => setTimeout(resolve, 0)); 
+            }
+            
+            plotStaticGraphData(newStaticGraphData);
+            temperature = originalTemperature; 
+            thermalFluctuationsEnabled = originalFluctuationState; 
+            if(fluctuationToggleButton) { 
+                 fluctuationToggleButton.textContent = thermalFluctuationsEnabled ? 'Pause Thermal' : 'Resume Thermal';
+                 if(thermalFluctuationsEnabled) fluctuationToggleButton.classList.remove('paused'); else fluctuationToggleButton.classList.add('paused');
+            }
+            statusMessageElement.textContent = "Static graph generated.";
+            generateStaticGraphButton.disabled = false;
+            resetChiAverage(); 
+        }
+
+
+        let mcsCountSinceLastDisplayUpdate = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (thermalFluctuationsEnabled && !isDrawingShape) {
+                for (let step = 0; step < stepsPerFrame; step++) { 
+                    metropolisStep();
+                }
+                const current_M_total = calculateCurrentTotalMagnetization();
+                sum_M_tot += current_M_total;
+                sum_M2_tot += current_M_total * current_M_total;
+                mcs_for_avg_chi++;
+            }
+            
+            mcsCountSinceLastDisplayUpdate++;
+            if (mcsCountSinceLastDisplayUpdate >= 10 ) { 
+                 if(magnetizationValueDisplay) magnetizationValueDisplay.textContent = calculateCurrentMagnetizationPerSpin().toFixed(3);
+                 mcsCountSinceLastDisplayUpdate = 0;
+            }
+
+            if (mcs_for_avg_chi >= CHI_AVG_WINDOW && thermalFluctuationsEnabled) {
+                let chi = 0;
+                if (temperature > 0.00001) { 
+                    const N_total_spins = gridSize * gridSize;
+                    if (N_total_spins > 0 && mcs_for_avg_chi > 0) { 
+                        const avg_M_tot_val = sum_M_tot / mcs_for_avg_chi;
+                        const avg_M2_tot_val = sum_M2_tot / mcs_for_avg_chi;
+                        chi = (avg_M2_tot_val - avg_M_tot_val * avg_M_tot_val) / (N_total_spins * temperature);
+                        if(susceptibilityValueDisplay) susceptibilityValueDisplay.textContent = chi.toFixed(3);
+                        addDataToDynamicGraph(temperature, chi); 
+                    }
+                } else { 
+                    if(susceptibilityValueDisplay) susceptibilityValueDisplay.textContent = "0.000"; 
+                }
+                sum_M_tot = 0;
+                sum_M2_tot = 0;
+                mcs_for_avg_chi = 0;
+            }
+
+            if (controls && controls.enabled) { 
+                controls.update(); 
+            }
+            if (renderer && scene && camera) { 
+                 renderer.render(scene, camera);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOMContentLoaded event fired."); // DEBUG
+            try {
+                init(); 
+                if (typeof animate === "function") { 
+                    animate(); 
+                } else {
+                    console.error("CRITICAL: animate function is not defined!");
+                }
+            } catch (error) {
+                console.error("Error during DOMContentLoaded or initial setup:", error);
+                const body = document.querySelector('body');
+                if (body) {
+                    body.innerHTML = `<div style="padding: 20px; text-align: center; color: red; font-size: 1.2em;">
+                                        An error occurred. Please check the browser console (F12) for details.
+                                        The simulation could not be started. Error: ${error.message}
+                                      </div>`;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
